@@ -1,0 +1,252 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DNS Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --glass-bg: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.15);
+      --glow: 0 0 15px rgba(255, 255, 255, 0.2);
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .glass {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .glass:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--glow);
+    }
+
+    button:hover {
+      transform: scale(1.05);
+    }
+
+    input:focus, textarea:focus, select:focus {
+      box-shadow: var(--glow);
+      background: rgba(255, 255, 255, 0.15);
+    }
+  </style>
+</head>
+<body class="font-sans text-white p-4 md:p-6">
+  <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-white">🌐 DNS Manager</h1>
+  <div class="text-center mb-4 text-lg font-semibold" id="kv-status">KV Status: Checking...</div>
+  <div class="max-w-2xl mx-auto mb-6">
+    <input type="text" id="search" placeholder="Search DNS..." aria-label="Search DNS entries" 
+           class="w-full p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+  </div>
+  <div id="message" class="hidden text-center p-3 mb-4 rounded-lg"></div>
+  <form id="add-form" class="max-w-2xl mx-auto mb-8 glass p-4 rounded-lg">
+    <div class="flex flex-col md:flex-row gap-4">
+      <select name="country" aria-label="Select country" class="p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-white">
+        ${Object.entries({
+          'RU': '🇷🇺 Russia',
+          'US': '🇺🇸 USA',
+          'DE': '🇩🇪 Germany',
+          'FR': '🇫🇷 France',
+          'CN': '🇨🇳 China',
+          'AM': '🇦🇲 Armenia',
+          'OM': '🇴🇲 Oman',
+          'AL': '🇦🇱 Albania',
+          'BE': '🇧🇪 Belgium',
+          'CZ': '🇨🇿 Czech'
+        }).map(([code, name]) => `<option value="${code}">${name}</option>`).join('')}
+      </select>
+      <textarea name="dns" placeholder="Enter DNS (IP, range, or CIDR, one per line)" rows="4" required 
+                aria-label="DNS input" class="p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-white"></textarea>
+      <button type="submit" class="p-3 bg-blue-600 rounded-lg hover:bg-blue-700 transition-transform">Add DNS</button>
+    </div>
+  </form>
+
+  <div id="dns-lists" class="space-y-6">
+    ${Object.entries({
+      'RU': '🇷🇺 Russia',
+      'US': '🇺🇸 USA',
+      'DE': '🇩🇪 Germany',
+      'FR': '🇫🇷 France',
+      'CN': '🇨🇳 China',
+      'AM': '🇦🇲 Armenia',
+      'OM': '🇴🇲 Oman',
+      'AL': '🇦🇱 Albania',
+      'BE': '🇧🇪 Belgium',
+      'CZ': '🇨🇿 Czech'
+    }).map(([code, name]) => `
+      <div class="glass p-4 rounded-lg" data-country="${code}">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xl font-semibold">${name}</h2>
+          <button class="copy-all p-2 bg-gray-700/50 rounded-lg hover:bg-gray-600 transition-transform" data-country="${code}">Copy All</button>
+        </div>
+        <div class="dns-list space-y-2"></div>
+      </div>
+    `).join('')}
+  </div>
+
+  <script>
+    const COUNTRY_FLAGS = {
+      'RU': '🇷🇺 Russia',
+      'US': '🇺🇸 USA',
+      'DE': '🇩🇪 Germany',
+      'FR': '🇫🇷 France',
+      'CN': '🇨🇳 China',
+      'AM': '🇦🇲 Armenia',
+      'OM': '🇴🇲 Oman',
+      'AL': '🇦🇱 Albania',
+      'BE': '🇧🇪 Belgium',
+      'CZ': '🇨🇿 Czech'
+    };
+
+    async function loadDNSLists() {
+      const kvStatus = document.getElementById('kv-status');
+      try {
+        await fetch('/api/status').then(res => res.text()).then(text => {
+          kvStatus.textContent = `KV Status: ${text}`;
+          kvStatus.className = text.includes('Connected') ? 'text-green-500' : 'text-red-500';
+        });
+      } catch (e) {
+        kvStatus.textContent = 'KV Status: ❌ Not Connected';
+        kvStatus.className = 'text-red-500';
+      }
+
+      for (const code of Object.keys(COUNTRY_FLAGS)) {
+        const response = await fetch(`/api/list?country=${code}`);
+        const dnsList = await response.json();
+        const container = document.querySelector(`[data-country="${code}"] .dns-list`);
+        container.innerHTML = dnsList.map((entry, i) => `
+          <div class="dns-item flex justify-between items-center p-2 bg-gray-800/30 rounded-lg" data-dns="${entry.addr}">
+            <span>${entry.addr}</span>
+            <div>
+              <button class="edit-dns p-2 bg-yellow-600 rounded-lg hover:bg-yellow-700 mr-2" data-country="${code}" data-index="${i}">✏️</button>
+              <button class="delete-dns p-2 bg-red-600 rounded-lg hover:bg-red-700" data-country="${code}" data-index="${i}">🗑️</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function showMessage(text, type) {
+      const messageDiv = document.getElementById('message');
+      messageDiv.textContent = text;
+      messageDiv.className = `text-center p-3 mb-4 rounded-lg ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+      messageDiv.style.display = 'block';
+      setTimeout(() => messageDiv.style.display = 'none', 3000);
+    }
+
+    document.getElementById('add-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const dnsInput = form.querySelector('textarea[name="dns"]').value;
+      const country = form.querySelector('select[name="country"]').value;
+      const dnsLines = dnsInput.split('\n').map(line => line.trim()).filter(line => line);
+      const isValid = dnsLines.every(dns => 
+        /^((\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})$/.test(dns)
+      );
+
+      if (!isValid) {
+        showMessage('Invalid DNS or CIDR format!', 'error');
+        return;
+      }
+
+      const submitBtn = form.querySelector('button');
+      submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
+      submitBtn.textContent = 'Adding...';
+
+      try {
+        const response = await fetch('/api/add', {
+          method: 'POST',
+          body: new FormData(form)
+        });
+        if (response.ok) {
+          showMessage('Dns added successfully!', 'success');
+          await loadDNSLists();
+          form.reset();
+        } else {
+          throw new Error('Failed to add DNS');
+        }
+      } catch (error) {
+        showMessage(error.message, 'error');
+      } finally {
+        submitBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        submitBtn.textContent = 'Add DNS';
+      }
+    });
+
+    document.getElementById('search').addEventListener('input', () => {
+      const query = document.getElementById('search').value.toLowerCase();
+      document.querySelectorAll('.dns-item').forEach(item => {
+        const dns = item.dataset.dns.toLowerCase();
+        item.style.display = dns.includes(query) ? '' : 'none';
+      });
+    });
+
+    document.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('delete-dns')) {
+        const country = e.target.dataset.country;
+        const index = e.target.dataset.index;
+        try {
+          const response = await fetch('/api/delete', {
+            method: 'POST',
+            body: JSON.stringify({ country, index })
+          });
+          if (response.ok) {
+            showMessage('DNS deleted successfully!', 'success');
+            await loadDNSLists();
+          } else {
+            throw new Error('Failed to delete DNS');
+          }
+        } catch (error) {
+          showMessage(error.message, 'error');
+        }
+      }
+
+      if (e.target.classList.contains('edit-dns')) {
+        const country = e.target.dataset.country;
+        const index = e.target.dataset.index;
+        const dnsItem = e.target.closest('.dns-item');
+        const currentAddr = dnsItem.querySelector('span').textContent;
+        const newAddr = prompt('Edit DNS address:', currentAddr);
+        if (newAddr && /^((\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})$/.test(newAddr)) {
+          try {
+            const response = await fetch('/api/edit', {
+              method: 'POST',
+              body: JSON.stringify({ country, index, newAddr })
+            });
+            if (response.ok) {
+              showMessage('DNS updated successfully!', 'success');
+              await loadDNSLists();
+            } else {
+              throw new Error('Failed to update DNS');
+            }
+          } catch (error) {
+            showMessage(error.message, 'error');
+          }
+        } else if (newAddr) {
+          showMessage('Invalid DNS or CIDR format!', 'error');
+        }
+      }
+
+      if (e.target.classList.contains('copy-all')) {
+        const country = e.target.dataset.country;
+        const dnsList = document.querySelector(`[data-country="${country}"] .dns-list`);
+        const dnsItems = dnsList.querySelectorAll('.dns-item span');
+        const text = Array.from(dnsItems).map(item => item.textContent).join('\n');
+        await navigator.clipboard.writeText(text);
+        showMessage(`Copied ${country} DNS list!`, 'success');
+      }
+    });
+
+    loadDNSLists();
+  </script>
+</body>
+</html>
